@@ -78,6 +78,20 @@ function addMiddleware(handler: Middleware): void {
 
 The test for where a function belongs: does it reference a variable declared in the factory's closure scope? If yes, it stays in the factory. If no, extract it to utils.
 
+### Deconstruct Paramaters of Functions
+
+```ts
+// Bad -- unecessery function deconstruciton within the function
+function readConfig(options: ConfigReadOptions) {
+  const { config, source, destination } = options;
+}
+
+// Good -- keeps the desconstruction within the function and removes the const noise
+function readConfig({ config, source, destination } : ConfigReadOptions) {
+  // Logic can use the scoped vars from the deconstruction
+}
+```
+
 ### Why factories over classes
 
 - **No `this` ambiguity** -- methods are plain functions, safe to destructure or pass as callbacks without `.bind()`
@@ -325,6 +339,108 @@ The resolved type is internal -- consumers pass `CacheOptions`, the factory work
 
 ---
 
+## Minimal Data Transformation
+
+Pass data structures through your code in their original shape whenever possible. Every transformation — mapping, reshaping, normalizing, converting to a DTO — adds a layer of indirection that obscures where data comes from and what shape it actually is. The more transformations between the source and the consumer, the harder it is to trace a bug or understand a data flow.
+
+### Use types, not transformations
+
+When you receive a data structure (from an API, a database, a config file, another module), type it and pass it along. Don't destructure it into a new object just to rename fields or drop properties you don't need right now. The downstream consumer can pick the properties it needs directly.
+
+```ts
+// Bad -- creates an intermediate shape that hides the original structure
+function processUser(rawUser: RawUser) {
+  const user = {
+    id: rawUser.user_id,
+    fullName: `${rawUser.first_name} ${rawUser.last_name}`,
+    email: rawUser.email_address,
+  };
+  return calculatePermissions(user);
+}
+
+// Good -- pass the raw structure, type it, access what you need
+function processUser(rawUser: RawUser) {
+  return calculatePermissions(rawUser);
+}
+
+function calculatePermissions(user: RawUser) {
+  if (user.role === "admin") { ... }
+}
+```
+
+### When transformation is justified
+
+Transform only when an algorithm or data structure requirement demands it:
+
+- **Indexing** -- building a `Map` or lookup table from an array for O(1) access
+- **Aggregation** -- reducing a collection to a summary value
+- **Algorithm input** -- a sorting algorithm needs a comparator, a graph algorithm needs an adjacency list in a specific shape
+- **Boundary crossing** -- converting between serialization formats (JSON to binary, protobuf to objects) at system edges
+
+These are cases where the data *must* change shape for the computation to work. Renaming fields or extracting a subset "for cleanliness" is not algorithmic necessity -- it's cosmetic overhead that distances the code from its data source.
+
+### The cost of unnecessary transformation
+
+Each mapping step introduces:
+- **A new type to maintain** -- the intermediate shape needs its own interface, which drifts from the source over time
+- **Broken traceability** -- when a bug surfaces, you trace through multiple transformation layers instead of following the data directly
+- **Wasted allocation** -- spreading, mapping, and reconstructing objects costs memory and CPU for no behavioral benefit
+
+If a function only needs two fields from a large object, it takes the whole object and reads those two fields. The function signature documents what it depends on through its type, and the caller doesn't need to pre-select properties.
+
+---
+
+## Minimal Data Transformation
+
+Pass data structures through your code in their original shape whenever possible. Every transformation — mapping, reshaping, normalizing, converting to a DTO — adds a layer of indirection that obscures where data comes from and what shape it actually is. The more transformations between the source and the consumer, the harder it is to trace a bug or understand a data flow.
+
+### Use types, not transformations
+
+When you receive a data structure (from an API, a database, a config file, another module), type it and pass it along. Don't destructure it into a new object just to rename fields or drop properties you don't need right now. The downstream consumer can pick the properties it needs directly.
+
+```ts
+// Bad -- creates an intermediate shape that hides the original structure
+function processUser(rawUser: RawUser) {
+  const user = {
+    id: rawUser.user_id,
+    fullName: `${rawUser.first_name} ${rawUser.last_name}`,
+    email: rawUser.email_address,
+  };
+  return calculatePermissions(user);
+}
+
+// Good -- pass the raw structure, type it, access what you need
+function processUser(rawUser: RawUser) {
+  return calculatePermissions(rawUser);
+}
+
+function calculatePermissions(user: RawUser) {
+  if (user.role === "admin") { ... }
+}
+```
+
+### When transformation is justified
+
+Transform only when an algorithm or data structure requirement demands it:
+
+- **Indexing** -- building a `Map` or lookup table from an array for O(1) access
+- **Aggregation** -- reducing a collection to a summary value
+- **Algorithm input** -- a sorting algorithm needs a comparator, a graph algorithm needs an adjacency list in a specific shape
+- **Boundary crossing** -- converting between serialization formats (JSON to binary, protobuf to objects) at system edges
+
+These are cases where the data *must* change shape for the computation to work. Renaming fields or extracting a subset "for cleanliness" is not algorithmic necessity -- it's cosmetic overhead that distances the code from its data source.
+
+### The cost of unnecessary transformation
+
+Each mapping step introduces:
+- **A new type to maintain** -- the intermediate shape needs its own interface, which drifts from the source over time
+- **Broken traceability** -- when a bug surfaces, you trace through multiple transformation layers instead of following the data directly
+- **Wasted allocation** -- spreading, mapping, and reconstructing objects costs memory and CPU for no behavioral benefit
+
+If a function only needs two fields from a large object, it takes the whole object and reads those two fields. The function signature documents what it depends on through its type, and the caller doesn't need to pre-select properties.
+
+---
+
 ## Comments and Documentation
 
 ### No file-level comments
@@ -475,3 +591,26 @@ When entering a project, look for these signals to adapt conventions:
 | `.eslintrc` / `biome.json` | Follow the project's linter rules |
 
 When in doubt, apply the conventions in this skill. When conventions conflict with an established project pattern, follow the project and note why.
+
+---
+
+## Keeping Documentation in Sync
+
+Before making code changes, check whether the project has documentation (a `docs/` directory, README files, API references, markdown guides, etc.). When it does, any code change that alters public-facing behavior must include corresponding documentation updates.
+
+### What triggers a docs update
+
+- **Renamed or removed exports** -- update any docs that reference the old name
+- **Changed function signatures** -- update parameter descriptions, usage examples
+- **Changed return types or behavior** -- update descriptions of what the function does
+- **New configuration options** -- add them to the relevant docs page
+
+### Keep updates minimal
+
+Match the scope of the docs change to the scope of the code change. If you renamed a parameter, update the line that references it -- don't rewrite the entire page. Documentation churn makes it harder to review what actually changed.
+
+The exception is implementing a new feature. New features warrant a dedicated documentation section or page that explains what it does, when to use it, and shows a usage example.
+
+### Don't create docs unprompted
+
+If the project has no existing documentation, do not create any. Only update what already exists. If a new feature clearly needs docs and none exist, ask the user whether they want documentation added and where.

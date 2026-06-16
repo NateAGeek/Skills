@@ -1,11 +1,11 @@
 ---
 name: documentation-process
-description: Best practices for writing and maintaining user-facing documentation — tone, structure, type tables, JSDoc as source of truth, and what to keep out of docs
+description: Best practices for writing and maintaining user-facing documentation — tone, structure, type tables, JSDoc as source of truth, and what to keep out of docs. Use this skill whenever writing, editing, or reviewing .mdx documentation pages, updating JSDoc on exported types, adding new docs pages, documenting new features or APIs, refactoring docs after code changes, or discussing documentation conventions. Also use when creating or updating meta.json navigation files, README files for examples, or protocol/wire-format docs.
 ---
 
 ## Overview
 
-This skill defines the documentation conventions for this monorepo. All user-facing docs live in `docs/content/docs/` as `.mdx` files rendered by Fumadocs. Type reference tables are auto-generated from source TypeScript via `AutoTypeTable`, making JSDoc comments the single source of truth for type documentation.
+This skill defines documentation conventions for monorepos using Fumadocs with auto-generated type tables. All user-facing docs live in `docs/content/docs/` as `.mdx` files rendered by Fumadocs. Type reference tables are auto-generated from source TypeScript via `AutoTypeTable`, making JSDoc comments the single source of truth for type documentation.
 
 The guiding principle: **docs describe what the user can do and when to use it. They never expose internal implementation details.**
 
@@ -17,8 +17,13 @@ The guiding principle: **docs describe what the user can do and when to use it. 
 |---|---|---|
 | Fumadocs (MDX) | `docs/content/docs/**/*.mdx` | User-facing documentation pages |
 | `AutoTypeTable` | `fumadocs-typescript/ui` | Auto-generates type reference tables from source `.ts` files |
-| `source.config.ts` | `docs/source.config.ts` | Configures `remarkAutoTypeTable` plugin |
-| `mdx.tsx` | `docs/components/mdx.tsx` | Registers `AutoTypeTable` as an MDX component |
+| `source.config.ts` | `docs/source.config.ts` | Configures `remarkAutoTypeTable` plugin with a shared generator |
+| `mdx.tsx` | `docs/components/mdx.tsx` | Registers `AutoTypeTable` as an MDX component with the generator |
+| `meta.json` | `docs/content/docs/**/meta.json` | Controls page ordering and navigation labels per directory |
+
+### Generator and Cache
+
+Both `source.config.ts` and `mdx.tsx` create a `generator` instance with a filesystem cache at `.next/fumadocs-typescript`. This generator resolves TypeScript types at build time. You don't need to touch these files unless changing the cache location or adding custom type resolution logic — just use `<AutoTypeTable>` in your MDX and the existing pipeline handles the rest.
 
 ---
 
@@ -26,10 +31,10 @@ The guiding principle: **docs describe what the user can do and when to use it. 
 
 User-facing documentation must never mention:
 
-- **Internal libraries or SDKs** — never say "AI SDK", "Vercel AI SDK", or reference `ai` package internals. The user interacts with Comma Agents APIs, not the underlying SDK.
-- **Internal delegation or execution paths** — never say "call() delegates to stream() internally", "single execution path", or describe how one method is implemented in terms of another.
-- **Internal hook lifecycle mechanics** — don't enumerate the hook execution order (alter message → before call → execute → after call → alter response) in feature docs. That belongs in the Hooks reference page only.
-- **Internal type names from dependencies** — avoid surfacing types like `LanguageModel`, `StepResult`, `ModelMessage` in prose unless the user directly interacts with them.
+- **Internal libraries or SDKs** — never reference underlying SDK package names or internals. The user interacts with your project's APIs, not the libraries powering them.
+- **Internal delegation or execution paths** — never describe how one method is implemented in terms of another (e.g., "call() delegates to stream() internally").
+- **Internal lifecycle mechanics** — don't enumerate internal execution order or hook pipelines in feature docs. Reserve that for dedicated reference pages.
+- **Internal type names from dependencies** — avoid surfacing types from third-party packages in prose unless the user directly interacts with them.
 
 ### What to write instead
 
@@ -43,17 +48,20 @@ Focus on:
 
 ```markdown
 <!-- BAD: exposes internals -->
-`stream()` is the single execution path for all agents. It runs the full
-hook lifecycle (alter message, before call, execute/LLM, after call, alter
-response), manages conversation history, and yields typed events.
+`stream()` is the single execution path. It runs the full hook lifecycle
+(alter message, before call, execute/LLM, after call, alter response),
+manages conversation history, and yields typed events.
 
 `call()` delegates to `stream()` internally — it consumes all events
 silently and returns the `done` result.
 
 <!-- GOOD: user-focused -->
 Use `stream()` to receive events as they arrive from the model. It yields
-typed `AgentStreamEvent` values — `text`, `tool-call`, `tool-result`,
-`step-start` — followed by a final `done` event containing the complete result.
+typed events — `text`, `tool-call`, `tool-result`, `step-start` — followed
+by a final `done` event containing the complete result.
+
+Use `call()` when you only need the final result and don't need to process
+events as they arrive.
 ```
 
 ```markdown
@@ -70,16 +78,16 @@ The model is resolved via the model registry and provider system.
 
 ## Type Tables: Use `AutoTypeTable`, Not Manual Markdown
 
-Every type reference in docs must use `AutoTypeTable` instead of hand-written markdown tables. This ensures type documentation stays in sync with source code automatically.
+Every type/interface reference in docs must use `AutoTypeTable` instead of hand-written markdown tables. This ensures type documentation stays in sync with source code automatically.
 
 ### Format
 
 ```mdx
-## AgentConfig
+## ConfigType
 
-The configuration object passed to `createAgent`.
+The configuration object passed to the factory function.
 
-<AutoTypeTable path="../packages/core/src/agents/agent/agent.types.ts" name="AgentConfig" />
+<AutoTypeTable path="../packages/core/src/module/module.types.ts" name="ConfigType" />
 ```
 
 ### Rules
@@ -90,13 +98,15 @@ The configuration object passed to `createAgent`.
 4. **Never duplicate type information in prose** that `AutoTypeTable` already renders. Add a brief intro sentence, then the table.
 5. **If a type table was previously a manual markdown table, replace it** with `AutoTypeTable`.
 
-### When manual tables are acceptable
+### When NOT to use AutoTypeTable
 
-Manual markdown tables are acceptable for non-type content:
-- Wire protocol message references (daemon protocol docs)
-- Feature comparison tables
-- Example file listings (README tables)
-- Conceptual overviews that don't map to a single TypeScript type
+`AutoTypeTable` is for documenting TypeScript interfaces and type aliases. Don't use it for:
+
+- **Function-level or registry APIs** — when documenting a registry, service, or set of functions (not a single type), use prose and code examples instead. The API shape is better communicated through usage patterns than a type table.
+- **Wire protocol / message format docs** — daemon or server protocols with request/response shapes are often clearer as manual markdown tables with columns like `Field | Type | Description`.
+- **Feature comparison tables** — conceptual overviews comparing options.
+- **Example file listings** — README tables listing example scripts.
+- **Conceptual overviews** that don't map to a single TypeScript type.
 
 ---
 
@@ -110,13 +120,13 @@ Since `AutoTypeTable` renders directly from TypeScript source, **JSDoc comments 
 2. **Every field gets a single-line `/** */` comment** describing what it does from the user's perspective.
 3. **Optional fields include `@default`** when there is a meaningful default.
 4. **`@example` blocks** on factory functions and major interfaces.
-5. **`@internal` tag** on implementation-only API surface (e.g., `appendHook`).
+5. **`@internal` tag** on implementation-only API surface.
 
 ### JSDoc must follow the same "no internals" rule
 
 Since JSDoc renders in the docs, it must not reference:
-- Internal SDK names ("AI SDK", "Vercel AI SDK")
-- Internal implementation details ("delegates to stream()", "wraps generateText")
+- Internal SDK names or package internals
+- Internal implementation details
 - Stale behavior (e.g., "streaming is not supported" when it now is)
 
 ```ts
@@ -138,7 +148,7 @@ getContext?(): ConversationContext;
 
 // GOOD — accurate, no stale claims
 /**
- * Custom execute override — replaces the LLM call with arbitrary logic.
+ * Custom execute override — replaces the default behavior with arbitrary logic.
  * When set, `model` is not required.
  */
 ```
@@ -160,8 +170,8 @@ Every `.mdx` file starts with YAML frontmatter:
 
 ```yaml
 ---
-title: createAgent
-description: Factory function for creating LLM-backed agents with string-based model and tool resolution.
+title: createSomething
+description: Factory function for creating X with Y capabilities.
 ---
 ```
 
@@ -210,8 +220,45 @@ description: {One-sentence summary.}
 1. **Intro + quick-start example** — always first
 2. **Config/input types** — what you pass in
 3. **Return types** — what you get back
-4. **Feature sections** — one per capability (streaming, cancellation, hooks, etc.)
+4. **Feature sections** — one per capability
 5. **Related links** — cross-references to other docs pages
+
+### Concept / Guide pages
+
+Not every page documents an API. For concept pages (overviews, guides, getting-started):
+
+```mdx
+---
+title: {Concept Name}
+description: {One-sentence summary.}
+---
+
+# {Concept Name}
+
+{2-3 sentence intro explaining the concept and why it matters.}
+
+## {Sub-topic}
+
+{Explanation with code examples.}
+
+## {Sub-topic}
+
+...
+```
+
+No `AutoTypeTable` needed — these pages use prose and code examples exclusively.
+
+---
+
+## Navigation: `meta.json` Files
+
+Each directory under `docs/content/docs/` has a `meta.json` that controls page ordering and navigation labels. When adding a new docs page:
+
+1. **Create the `.mdx` file** in the appropriate directory.
+2. **Add its slug to the `meta.json`** in the same directory so it appears in navigation.
+3. **Position it logically** — overview/index pages first, then core concepts, then advanced/reference.
+
+If creating a new directory (e.g., a new feature area), also create a `meta.json` inside it and reference the directory from the parent `meta.json`.
 
 ---
 
@@ -236,6 +283,24 @@ description: {One-sentence summary.}
 - Examples use `ts` code blocks with real, runnable code.
 - Import statements included when showing a feature for the first time on the page.
 - Comments in code examples should be brief — `// final text response`, not `// This is the final text response returned by the agent after processing`.
+
+---
+
+## Documentation Patterns by Domain
+
+Different parts of the codebase call for different documentation approaches:
+
+### API / Factory function docs
+Use the standard page layout pattern with `AutoTypeTable` for config and return types. This covers most core APIs (agents, flows, tools, hooks, credentials, strategy).
+
+### Protocol / Wire format docs
+Use manual markdown tables with `Field | Type | Description` columns. These document message shapes over the wire, not TypeScript interfaces the user imports. Keep request and response tables visually distinct.
+
+### CLI / Server docs
+Focus on commands, flags, and configuration. Use code blocks for command examples. Document environment variables and config file formats. Type tables are rarely useful here — prefer structured prose.
+
+### Built-in implementations
+When documenting built-in tools, hooks, flows, or other implementations: lead with what it does and a usage example, then document any specific config options. Keep these pages short — the user wants to know how to use it, not how it works internally.
 
 ---
 
@@ -265,11 +330,13 @@ Example READMEs (`examples/*/scripts/README.md`) follow different rules than API
 
 ## Checklist: Before Merging Documentation Changes
 
-1. All type references use `AutoTypeTable`, not manual markdown tables (unless non-type content).
-2. No mentions of "AI SDK", "Vercel AI SDK", or internal SDK type names in user-facing text.
-3. No internal implementation details (delegation, execution paths, hook ordering in feature docs).
+1. All type references use `AutoTypeTable`, not manual markdown tables (unless non-type content or function/registry APIs).
+2. No mentions of internal SDK names or third-party package internals in user-facing text.
+3. No internal implementation details (delegation, execution paths, lifecycle ordering in feature docs).
 4. JSDoc on source types matches the behavior described in `.mdx` prose.
 5. No stale JSDoc that describes removed or changed behavior.
 6. Code examples are complete and runnable (imports included on first use).
 7. `bun run build` in `docs/` succeeds (validates `AutoTypeTable` paths and type names).
 8. Cross-references use relative Fumadocs paths, not absolute URLs.
+9. New pages are added to the relevant `meta.json` for navigation.
+10. `meta.json` ordering is logical (overview first, then concepts, then reference).

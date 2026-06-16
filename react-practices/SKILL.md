@@ -1,19 +1,60 @@
 ---
 name: react-practices
-description: React component and hook conventions — PascalCase file organization, container/render separation, hook patterns, SCSS module styling with mobile-first responsive design, and domain structure. Extends ts-patterns with React-specific rules. Use this skill whenever writing or reviewing React components, creating hooks, writing component styles, setting up React project structure, or discussing React best practices. Also use when the user mentions JSX, TSX, React components, hooks, SCSS, CSS Modules, responsive design, or any React UI work.
+description: React component and hook conventions — PascalCase file organization, container/render separation, hook patterns, SCSS module styling with mobile-first responsive design, and domain structure. Extends ts-patterns with React-specific rules. Use this skill whenever writing or reviewing React components, creating hooks, writing component styles, setting up React project structure, or discussing React best practices. Also use when the user mentions JSX, TSX, React components, hooks, SCSS, CSS Modules, responsive design, or any React UI work. Includes camelCase CSS class names for dot notation access.
 ---
+
+> **Dependency:** Always load the **ts-patterns** skill alongside this one. This skill extends ts-patterns and assumes all its rules are active.
 
 ## Overview
 
-This skill extends **ts-patterns** with React-specific conventions. Everything in ts-patterns still applies (functional architecture, naming discipline, barrel exports, type conventions, test philosophy, JSDoc standards) unless explicitly overridden below. When a rule here conflicts with ts-patterns, this skill wins.
+This skill extends **ts-patterns** with React-specific conventions. Everything in ts-patterns still applies (functional architecture, naming discipline, barrel exports, test philosophy, JSDoc standards) unless explicitly overridden below.
+
+> **Priority rule:** When *any* guidance in this skill conflicts with ts-patterns -- even implicitly, even by example -- **react-practices always wins**. Do not fall back to ts-patterns for React code when this skill has spoken on the topic, either through an explicit rule or through a worked code example. If the example here shows a pattern that ts-patterns would route differently, follow the example.
 
 The key differences from ts-patterns:
 
 - **PascalCase** for component and domain file/folder names (instead of kebab-case)
 - **Container/Render separation** for components
+- **Component `Props` interfaces live in the component file, directly above the function they describe** -- they do *not* go in `{Domain}.types.ts`. This overrides the ts-patterns rule that all domain types live in `{domain}.types.ts`.
 - **Hook conventions** with `use` prefix (camelCase)
-- **SCSS Modules** with snake_case class names, flex-first layout, mobile-first responsive design
+- **SCSS Modules** with camelCase class names, flex-first layout, mobile-first responsive design
 - File suffixes (`.constants.ts`, `.types.ts`, etc.) remain the same pattern, just with PascalCase domain prefixes
+
+---
+
+## Project Structure
+
+```
+src/
+  components/
+  pages/
+  hooks/
+  styles/
+  utils/
+```
+
+| Directory | Purpose | Naming | Example contents |
+|---|---|---|---|
+| `components/` | Reusable UI components shared across pages | PascalCase folders | `UserProfile/`, `DataTable/`, `Modal/` |
+| `pages/` | Page-level components that map to routes | PascalCase folders | `Dashboard/`, `Settings/`, `Login/` |
+| `hooks/` | Global hooks and contexts not tied to a specific component | camelCase `use` prefix folders | `useAuth/`, `useFormValidation/`, `useDebounce/` |
+| `styles/` | Global design system -- tokens, mixins, breakpoints, typography | Prefixed with `_` for partials | `_tokens.scss`, `_mixins.scss`, `_breakpoints.scss`, `global.scss` |
+| `utils/` | Global utilities shared across the whole application | camelCase files | `formatDate.ts`, `parseQuery.ts`, `validation.ts` |
+
+### Where hooks live
+
+- **Domain-specific hooks** nest inside their parent component or page folder as a subfolder (e.g., `UserProfile/useUserProfile/`).
+- **Global hooks** that serve multiple domains or have no parent component live in root `hooks/` (e.g., `hooks/useAuth/`).
+- The same rule applies to contexts -- a domain context nests inside its domain, a global context lives in `hooks/`.
+
+### Where styles live
+
+- **Global design system** files (`_tokens.scss`, `_mixins.scss`, `_breakpoints.scss`, `_typography.scss`, `global.scss`) live in `styles/`.
+- **Component styles** live next to their component as `{Component}.module.scss` (e.g., `UserProfile/UserProfile.module.scss`).
+
+### No root barrel export
+
+There is no `src/index.ts` or `src/index.tsx`. The root of the project is not a domain -- it's the application entry point, and barrel exports only exist at the domain folder level. The exception is if the project is a library intended for external consumption, where a root `index.ts` serves as the public API surface.
 
 ---
 
@@ -52,10 +93,10 @@ The file suffixes from ts-patterns are unchanged. Only the domain prefix casing 
 | File | Purpose | Exported from barrel? |
 |---|---|---|
 | `index.ts` | Barrel -- only re-exports | IS the barrel |
-| `{Domain}.tsx` | Component (container + render) | Yes |
+| `{Domain}.tsx` | Component (container + render) **and its `Props` / `RenderProps` interfaces** | Yes |
 | `{domain}.context.tsx` | Context object and provider (hook domains only) | Yes (provider) |
 | `{Domain}.module.scss` | Scoped component styles (CSS Modules) | No (internal) |
-| `{Domain}.types.ts` | All types for this domain | Yes |
+| `{Domain}.types.ts` | All *other* types for this domain (shared shapes, enums, return types, etc.). **Never** the component's own `Props` / `RenderProps` -- those stay co-located in `{Domain}.tsx`. | Yes |
 | `{Domain}.constants.ts` | Named constants, default value objects | No (internal) |
 | `{Domain}.utils.ts` | Pure stateless helpers | No (internal) |
 | `{Domain}.test.tsx` | Co-located unit tests | No |
@@ -84,8 +125,7 @@ export interface UserProfileProps {
   readonly showStatus?: boolean;
 }
 
-export function UserProfile(props: UserProfileProps): React.ReactElement {
-  const { userId, showStatus = true } = props;
+export function UserProfile({ userId, showStatus = true }: UserProfileProps): React.ReactElement {
   const { user, isOnline } = useAuth(userId);
   const navigate = useNavigate();
 
@@ -115,9 +155,7 @@ export interface UserProfileRenderProps {
   readonly onLogout: () => void;
 }
 
-export function UserProfileRender(props: UserProfileRenderProps): React.ReactElement {
-  const { displayName, avatarUrl, isOnline, onLogout } = props;
-
+export function UserProfileRender({ displayName, avatarUrl, isOnline, onLogout }: UserProfileRenderProps): React.ReactElement {
   return (
     <div>
       <img src={avatarUrl} alt={displayName} />
@@ -139,11 +177,13 @@ export function UserProfileRender(props: UserProfileRenderProps): React.ReactEle
 
 4. **The render function focuses on rendering.** It receives its data through props and returns JSX. It should not trigger application-wide side effects or data mutations. However, rendering-specific concerns are allowed inside the render function: local UI state (e.g., `useState` for a tooltip open/closed toggle), layout effects (`useLayoutEffect` for measuring DOM elements), animations, and derived rendering state from prop changes. The line is clear -- if the state or effect exists purely to control how things look on screen, it belongs in the render function. If it fetches data, mutates application state, or triggers business logic, it belongs in the container.
 
-5. **Both props interfaces are exported and documented.** Define `{Component}Props` for the container and `{Component}RenderProps` for the render function. Both are exported from the types file. Every field in both interfaces gets a single-line `/** */` JSDoc comment explaining its purpose.
+5. **Both props interfaces are exported and documented -- from the component file, not the types file.** Define `{Component}Props` directly above the container and `{Component}RenderProps` directly above the render function, both inside `{Component}.tsx`, and `export` them from there. The barrel re-exports them from the component file. This overrides the ts-patterns rule that all domain types live in `{Domain}.types.ts` -- component `Props` are an exception because their value is the visual proximity to the function signature that consumes them. Every field in both interfaces gets a single-line `/** */` JSDoc comment explaining its purpose. (Other domain-level types -- shared shapes, enums, hook return types, etc. -- still go in `{Domain}.types.ts` as usual.)
 
 6. **Both live in the same file.** Don't split them across files -- the render function is a detail of the component, not a separate module.
 
 7. **Simple components can skip the separation.** If a component has no state, no effects, and no hooks -- just props in, JSX out -- it's already a pure render function. No need to artificially create an empty container around it. Use your judgment: the pattern exists to separate concerns. When there's only one concern, one function is fine.
+
+8. **Destructure props inline in the parameter list.** Use `function UserProfile({ userId, showStatus = true }: UserProfileProps)` instead of `function UserProfile(props: UserProfileProps) { const { userId, showStatus = true } = props; }`. Inline destructuring keeps the props contract visible at the function signature, removes a line of boilerplate, and makes default values obvious. This rule applies to all components, render functions, providers, and any function that accepts a typed props object.
 
 ---
 
@@ -151,36 +191,63 @@ export function UserProfileRender(props: UserProfileRenderProps): React.ReactEle
 
 ### File organization
 
-Hooks follow the same domain structure but use camelCase with the `use` prefix:
+Hooks that belong to a specific domain live **inside that domain's folder** as a subfolder. Global hooks that aren't tied to any particular component domain live in the root `hooks/` directory:
 
 ```
-useAuth/
-  useAuth.ts
-  useAuth.types.ts
-  useAuth.constants.ts
-  useAuth.utils.ts
-  useAuth.test.ts
-  index.ts
+// Domain-specific hook -- nested inside the domain folder
+UserProfile/
+  UserProfile.tsx
+  UserProfile.module.scss
+  useUserProfile/
+    useUserProfile.ts
+    useUserProfile.types.ts
+    useUserProfile.test.ts
+    index.ts
+
+// Global/independent hook -- lives in root hooks/
+hooks/
+  useFormValidation/
+    useFormValidation.ts
+    useFormValidation.types.ts
+    useFormValidation.test.ts
+    index.ts
+  useDebounce/
+    useDebounce.ts
+    useDebounce.types.ts
+    useDebounce.test.ts
+    index.ts
 ```
 
 ### Hook structure
 
-Hooks follow the factory-like pattern from ts-patterns -- they encapsulate state and return a clean public interface. Inner functions that are returned or passed as callbacks must be wrapped in `React.useCallback` so consumers can rely on stable references for memoization and dependency arrays:
+Hooks follow the factory-like pattern from ts-patterns -- they encapsulate state and return a clean public interface. Inner functions that are returned or passed as callbacks must be wrapped in `React.useCallback` so consumers can rely on stable references for memoization and dependency arrays.
+
+### Internal ordering
+
+Inside any hook (and inside container components), organize the body in this fixed order whenever possible. This makes hooks scannable -- the data layer is at the top, derivations in the middle, and side effects at the bottom:
+
+1. **State** -- `useState`, `useRef`
+2. **Memos** -- `useMemo` for derived values from state or props
+3. **Custom hooks** -- calls to other hooks (`useAuth`, `useTheme`, `useNavigate`, etc.)
+4. **Callbacks** -- `useCallback` for functions returned from the hook or passed as props
+5. **Reducers** -- `useReducer` (placed after callbacks because reducer actions are typically dispatched from callbacks defined above)
+6. **Effects** -- `useEffect`, `useLayoutEffect` last
+
+The reasoning: state defines what the hook owns, memos and custom hook calls derive values from that state, callbacks operate on the derived values, reducers consolidate complex state transitions driven by those callbacks, and effects react to changes in the final composed picture. Reading top-to-bottom mirrors the data flow.
 
 ```ts
 export function useAuth(): AuthState {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // 1. State
+  const [currentUser, setCurrentUser] = React.useState<User | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
 
-  useEffect(() => {
-    const subscription = authService.onAuthChange((user) => {
-      setCurrentUser(user);
-      setIsLoading(false);
-    });
+  // 2. Memos
+  const isAuthenticated = React.useMemo(() => currentUser !== null, [currentUser]);
 
-    return () => subscription.unsubscribe();
-  }, []);
+  // 3. Custom hooks
+  const navigate = useNavigate();
 
+  // 4. Callbacks
   const login = React.useCallback(
     async (credentials: LoginCredentials): Promise<void> => {
       // ...
@@ -190,17 +257,30 @@ export function useAuth(): AuthState {
 
   const logout = React.useCallback(async (): Promise<void> => {
     // ...
+    navigate("/login");
+  }, [navigate]);
+
+  // 5. Effects
+  React.useEffect(() => {
+    const subscription = authService.onAuthChange((user) => {
+      setCurrentUser(user);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   return {
     currentUser,
     isLoading,
-    isAuthenticated: currentUser !== null,
+    isAuthenticated,
     login,
     logout,
   };
 }
 ```
+
+**When the order isn't possible:** If a `useMemo` depends on a value returned from a custom hook, or a `useCallback` needs a memoized value, the dependency forces the order. In those cases, follow the data dependencies -- correctness trumps the convention. The ordering is a default for the common case, not a hard constraint that breaks valid code.
 
 ### Hook naming
 
@@ -220,9 +300,21 @@ Initializing context with `null` and throwing in the hook if the value is still 
 
 ### File organization
 
-Context hooks live in the hooks directory alongside regular hooks. The `.context.tsx` file sits next to the hook file:
+Context hooks follow the same placement rule as regular hooks -- if the context belongs to a domain, it nests inside that domain folder. Global contexts live in root `hooks/`. The `.context.tsx` file sits next to the hook file within the hook subfolder:
 
 ```
+// Domain-specific context -- nested inside the domain
+Theme/
+  Theme.tsx
+  Theme.module.scss
+  useTheme/
+    useTheme.ts
+    useTheme.context.tsx
+    useTheme.types.ts
+    useTheme.test.ts
+    index.ts
+
+// Global context -- lives in root hooks/
 hooks/
   useAuth/
     useAuth.ts
@@ -270,9 +362,7 @@ import type { ThemeContextType, ThemeContextProviderProps } from "./useTheme.typ
 
 export const ThemeContext = React.createContext<ThemeContextType | null>(null);
 
-export function ThemeContextProvider(props: ThemeContextProviderProps): React.ReactElement {
-  const { themeName, children } = props;
-
+export function ThemeContextProvider({ themeName, children }: ThemeContextProviderProps): React.ReactElement {
   const contextValue = React.useMemo<ThemeContextType>(() => {
     const resolvedTheme = resolveTheme(themeName);
     return {
@@ -350,8 +440,7 @@ import type { AuthContextType, AuthContextProviderProps } from "./useAuth.types"
 
 export const AuthContext = React.createContext<AuthContextType | null>(null);
 
-export function AuthContextProvider(props: AuthContextProviderProps): React.ReactElement {
-  const { children } = props;
+export function AuthContextProvider({ children }: AuthContextProviderProps): React.ReactElement {
   const [currentUser, setCurrentUser] = React.useState<User | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
@@ -427,6 +516,23 @@ components/
     UserProfile.storybook.tsx
     test.utils.ts
     index.ts
+    useUserProfile/
+      useUserProfile.ts
+      useUserProfile.types.ts
+      useUserProfile.test.ts
+      index.ts
+
+  Theme/
+    Theme.tsx
+    Theme.module.scss
+    Theme.types.ts
+    index.ts
+    useTheme/
+      useTheme.ts
+      useTheme.context.tsx
+      useTheme.types.ts
+      useTheme.test.ts
+      index.ts
 
 hooks/
   useAuth/
@@ -436,18 +542,14 @@ hooks/
     useAuth.constants.ts
     useAuth.test.ts
     index.ts
-  useTheme/
-    useTheme.ts
-    useTheme.context.tsx
-    useTheme.types.ts
-    useTheme.test.ts
-    index.ts
   useFormValidation/
     useFormValidation.ts
     useFormValidation.types.ts
     useFormValidation.test.ts
     index.ts
 ```
+
+Domain-specific hooks (like `useUserProfile` for the `UserProfile` component, or `useTheme` for the `Theme` component) nest inside their domain folder. Global hooks that serve multiple domains or have no parent component (like `useAuth`, `useFormValidation`) live in the root `hooks/` directory.
 
 ### Subdomain example
 
@@ -474,7 +576,7 @@ DataTable/
 
 ## Barrel Exports
 
-Same rules as ts-patterns -- only `export` and `export type` statements, no logic. Both the container and render function are exported:
+Same rules as ts-patterns -- only `export` and `export type` statements, no logic. Both the container and the render function are exported, **and so are their `Props` interfaces -- straight from the component file**, because that is where they are defined (see the component pattern section above):
 
 ```ts
 export { UserProfile, UserProfileRender } from "./UserProfile";
@@ -482,7 +584,13 @@ export { UserProfile, UserProfileRender } from "./UserProfile";
 export type {
   UserProfileProps,
   UserProfileRenderProps,
-} from "./UserProfile.types";
+} from "./UserProfile";
+```
+
+Any *other* domain types (shared shapes, enums, hook return types) are still re-exported from `{Domain}.types.ts`:
+
+```ts
+export type { UserProfileVariant, UserProfileSize } from "./UserProfile.types";
 ```
 
 For context hooks, export the provider from the context file and the hook from the hook file:
@@ -506,37 +614,37 @@ Each component gets a co-located `{Domain}.module.scss` file using CSS Modules f
 import styles from "./UserProfile.module.scss";
 ```
 
-### Snake_case class names
+### camelCase class names
 
-All CSS class names use **snake_case**. This keeps styling names visually distinct from TypeScript's camelCase/PascalCase and reads naturally in SCSS nesting:
+All CSS class names use **camelCase**. This allows dot notation access through CSS Modules (`styles.userProfile`) instead of bracket notation, keeping JSX clean and enabling IDE autocompletion:
 
 ```scss
-.user_profile {
+.userProfile {
   display: flex;
 
-  .avatar_container {
+  .avatarContainer {
     flex-shrink: 0;
   }
 
-  .status_indicator {
+  .statusIndicator {
     flex: 1;
   }
 }
 ```
 
-When accessed in TypeScript via CSS Modules, use bracket notation to preserve the snake_case:
+When accessed in TypeScript via CSS Modules, use dot notation:
 
 ```tsx
-<div className={styles["user_profile"]}>
-  <div className={styles["avatar_container"]}>
+<div className={styles.userProfile}>
+  <div className={styles.avatarContainer}>
 ```
 
 ### Tree-structured nesting
 
-Component styles follow a tree structure that mirrors the DOM hierarchy. The root class matches the component name in snake_case, and child elements nest inside it. This keeps specificity low and makes the relationship between styles and markup easy to trace:
+Component styles follow a tree structure that mirrors the DOM hierarchy. The root class matches the component name in camelCase, and child elements nest inside it. This keeps specificity low and makes the relationship between styles and markup easy to trace:
 
 ```scss
-.user_profile {
+.userProfile {
   display: flex;
   gap: $spacing_md;
 
@@ -645,7 +753,7 @@ Components import the tokens and mixins they need:
 @use "styles/mixins" as *;
 @use "styles/breakpoints" as *;
 
-.user_profile {
+.userProfile {
   @include flex_column;
   gap: $spacing_md;
   padding: $spacing_lg;
@@ -662,7 +770,7 @@ Use flexbox as the default layout mechanism. It handles alignment, distribution,
 
 ```scss
 // Good -- flex handles the layout
-.nav_bar {
+.navBar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -670,19 +778,8 @@ Use flexbox as the default layout mechanism. It handles alignment, distribution,
 }
 
 // Avoid -- absolute positioning for something flex can handle
-.nav_bar {
+.navBar {
   position: relative;
-
-  .logo {
-    position: absolute;
-    left: 16px;
-  }
-
-  .actions {
-    position: absolute;
-    right: 16px;
-  }
-}
 ```
 
 **When `position: absolute` is appropriate:** Only use absolute (or fixed) positioning when elements genuinely need to overlap other content -- tooltips, dropdowns, modals, floating action buttons, notification badges. If you can achieve the layout with flex, use flex.
@@ -733,7 +830,7 @@ Write the mobile layout first, then enhance:
 @use "styles/tokens" as *;
 @use "styles/breakpoints" as *;
 
-.product_grid {
+.productGrid {
   display: flex;
   flex-direction: column;
   gap: $spacing_sm;
@@ -746,19 +843,19 @@ Write the mobile layout first, then enhance:
     flex-direction: row;
     flex-wrap: wrap;
 
-    .product_card {
+    .productCard {
       flex: 0 0 calc(50% - $spacing_md);
     }
   }
 
   @include breakpoint_lg {
-    .product_card {
+    .productCard {
       flex: 0 0 calc(33.333% - $spacing_md);
     }
   }
 
   @include breakpoint_xl {
-    .product_card {
+    .productCard {
       flex: 0 0 calc(25% - $spacing_lg);
     }
   }
@@ -846,7 +943,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { UserProfile } from "./UserProfile";
 
-jest.mock("../hooks/useAuth", () => ({
+jest.mock("../../hooks/useAuth", () => ({
   useAuth: () => ({
     user: { displayName: "Jane Doe", avatarUrl: "https://example.com/avatar.jpg" },
     isOnline: true,
