@@ -92,6 +92,42 @@ function readConfig({ config, source, destination } : ConfigReadOptions) {
 }
 ```
 
+### Keep function parameters minimal
+
+Every function parameter must have a purpose in the function's current behavior or be required by a contract the function implements. Start with the smallest signature that satisfies the known requirement, and add a parameter only when production behavior actually needs input from the caller.
+
+Do not add parameters:
+
+- For hypothetical future features or behavior
+- Because a caller might eventually need more control
+- Only to make a test easier to write
+- To expose internal implementation details to tests
+- As unused placeholders, including underscore-prefixed parameters
+
+Tests must exercise the production API that the behavior requires. They do not justify expanding that API. If testing is difficult, improve the design around real dependencies or test observable behavior rather than adding a test-only argument.
+
+```ts
+// Bad -- `now` exists only so a test can control the result
+function isExpired(entry: CacheEntry, now: number): boolean {
+  return now - entry.createdAt > entry.ttl;
+}
+
+// Good -- minimal signature for the current production behavior
+function isExpired(entry: CacheEntry): boolean {
+  return Date.now() - entry.createdAt > entry.ttl;
+}
+```
+
+When variable behavior is a real product requirement, represent it as an explicit dependency with a domain-specific name. Do not invent that flexibility solely for tests.
+
+```ts
+interface CacheConfig {
+  readonly getCurrentTime: () => number;
+}
+```
+
+External callback, framework, and interface contracts are the exception. Include a parameter when the contract requires it; when TypeScript allows a callback to omit unused trailing parameters, omit them instead of naming placeholders.
+
 ### Why factories over classes
 
 - **No `this` ambiguity** -- methods are plain functions, safe to destructure or pass as callbacks without `.bind()`
