@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI TODO"
+  short_description: "Resolve AI-labeled code TODOs through an approval-gated plan"
+  default_prompt: "Find all AI-specific TODO comments, organize them by domain, and propose a step-by-step plan for my approval before implementing anything."
