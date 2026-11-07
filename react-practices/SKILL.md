@@ -46,6 +46,7 @@ src/
 - **Domain-specific hooks** nest inside their parent component or page folder as a subfolder (e.g., `UserProfile/useUserProfile/`).
 - **Global hooks** that serve multiple domains or have no parent component live in root `hooks/` (e.g., `hooks/useAuth/`).
 - The same rule applies to contexts -- a domain context nests inside its domain, a global context lives in `hooks/`.
+- **Hook groups**: when several global hooks share one backend domain (e.g., everything about runs), group them under a lowercase domain folder in `hooks/` (e.g., `hooks/runs/useRunStop/`). The group folder has one barrel (`hooks/runs/index.ts`) that consumers import from, and each hook keeps its own `use{Name}/` folder. If the hooks share state, the group owns a `{Domain}Provider/` that mounts the stateful parts once and splits fast-changing data from rarely-changing controls into separate contexts; consumer hooks take no arguments and read their slice from context.
 
 ### Where styles live
 
@@ -102,6 +103,14 @@ The file suffixes from ts-patterns are unchanged. Only the domain prefix casing 
 | `{Domain}.test.tsx` | Co-located unit tests | No |
 | `{Domain}.storybook.tsx` | Storybook stories (if project uses Storybook) | No |
 | `test.utils.ts` | Shared test fixtures for the module | No |
+
+---
+
+## Utility Extraction
+
+Apply ts-patterns' rule to keep trivial operations inline in components, render functions, and hooks. Keep simple derived values in local variables, such as `const normalizedSearch = search.trim().toLowerCase();`, rather than creating a `searchQuery()` wrapper in `{Domain}.utils.ts`. Purity, reuse of an obvious expression, or keeping the component short does not by itself justify extraction.
+
+Extract pure helpers to `{Domain}.utils.ts` or `use{Domain}.utils.ts` when they encapsulate meaningful domain policy or substantial logic that benefits from a separate name and scope. Keep required event handlers and hook callbacks in their appropriate React scope; a callback contract can require a function even when its body is short. Do not introduce a custom hook, `useMemo`, or `useCallback` solely to wrap a trivial calculation.
 
 ---
 
@@ -184,6 +193,27 @@ export function UserProfileRender({ displayName, avatarUrl, isOnline, onLogout }
 7. **Simple components can skip the separation.** If a component has no state, no effects, and no hooks -- just props in, JSX out -- it's already a pure render function. No need to artificially create an empty container around it. Use your judgment: the pattern exists to separate concerns. When there's only one concern, one function is fine.
 
 8. **Destructure props inline in the parameter list.** Use `function UserProfile({ userId, showStatus = true }: UserProfileProps)` instead of `function UserProfile(props: UserProfileProps) { const { userId, showStatus = true } = props; }`. Inline destructuring keeps the props contract visible at the function signature, removes a line of boilerplate, and makes default values obvious. This rule applies to all components, render functions, providers, and any function that accepts a typed props object.
+
+### Prefer explicit JSX props
+
+Write each known prop explicitly so the component's inputs and their sources are visible at the call site. Avoid `<Component {...props} />`, `<Component {...model} />`, or constructing a props object to spread merely to save typing. This also applies when a container passes values to its render function or a hook returns an object whose fields become props.
+
+```tsx
+// Bad -- hides which values the child receives
+<UserProfileRender {...profileState} onLogout={handleLogout} />
+
+// Good -- makes the child contract visible
+<UserProfileRender
+  displayName={profileState.displayName}
+  avatarUrl={profileState.avatarUrl}
+  isOnline={profileState.isOnline}
+  onLogout={handleLogout}
+/>
+```
+
+Use JSX spread when forwarding an intentionally open set of props is part of the component's contract, such as a generic wrapper forwarding native element attributes or a library's prop-getter API. Forward only the intended props, consume wrapper-only props first, and choose spread order deliberately so overrides are clear. Convenience alone is not a reason for an exception.
+
+Array expansion (`[...models, newModel]`, `someFunction(...argumentsList)`) and object spread for immutable updates remain appropriate when needed. Destructuring props in a parameter list is also encouraged; it is distinct from spreading props into JSX.
 
 ---
 
@@ -286,7 +316,7 @@ export function useAuth(): AuthState {
 
 - Hook files and folders: `useAuth`, `useFormValidation`, `useLocalStorage`
 - Return type interfaces: `AuthState`, `FormValidationState`, `LocalStorageState`
-- Internal helpers that don't use hooks go in `useAuth.utils.ts`
+- Internal helpers that justify extraction and don't use hooks or closure state go in `useAuth.utils.ts`; keep trivial expressions inline (see Utility Extraction).
 
 ---
 

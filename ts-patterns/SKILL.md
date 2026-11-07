@@ -50,7 +50,7 @@ export function createRouter(config: RouterConfig): Router {
 
 ### Internal helpers vs. utils
 
-Only define helper functions inside the factory when they need to read or mutate closure state. If a function is pure -- it takes inputs and returns outputs without touching closure variables -- it belongs in `{domain}.utils.ts`.
+Decide whether a helper is worth extracting before choosing its file. Keep straightforward expressions inline, even when they are pure. For helpers that justify extraction, define them inside the factory only when they need to read or mutate closure state; pure helpers belong in `{domain}.utils.ts`.
 
 ```ts
 // router.utils.ts — pure, no closure state needed
@@ -76,7 +76,27 @@ function addMiddleware(handler: Middleware): void {
 }
 ```
 
-The test for where a function belongs: does it reference a variable declared in the factory's closure scope? If yes, it stays in the factory. If no, extract it to utils.
+For a helper that justifies extraction, the placement test is whether it references a variable declared in the factory's closure scope. If yes, it stays in the factory. If no, it belongs in utils. Purity alone is not a reason to create a function or a utils file.
+
+### Keep trivial operations inline
+
+Write simple transformations, property access, boolean checks, and direct method calls where they are used. Avoid one-line utility wrappers that merely rename an obvious expression: they hide the actual operation and force the reader to find another definition without adding clarity.
+
+```ts
+// Bad -- a wrapper hides a straightforward string operation
+export function searchQuery(search: string): string {
+  return search.trim().toLowerCase();
+}
+
+const normalizedSearch = searchQuery(search);
+
+// Good -- the operation is visible at the point of use
+const normalizedSearch = search.trim().toLowerCase();
+```
+
+Use a descriptive local variable when a value needs a name or is used several times in the same scope. Repeating a short, obvious expression in separate places is acceptable; reuse alone does not justify a trivial wrapper. Do not create a helper solely to move code into utils, add JSDoc, or test an expression separately.
+
+Extract a function when it encapsulates meaningful domain policy, substantial reusable logic, or a computation whose complexity benefits from its own scope and name. Keep functions required by public APIs, interfaces, or callback contracts. Judge the abstraction by what it adds, not by its line count; a compact domain rule can still deserve a function.
 
 ### Deconstruct Paramaters of Functions
 
@@ -156,7 +176,7 @@ if (Date.now() - entry.createdAt > entry.ttl) {
 ```
 
 Extract a conditional into a named function only when:
-- It is reused in multiple places
+- It centralizes a meaningful domain rule used in multiple places
 - The expression is genuinely complex (multiple clauses, bit operations, non-obvious math) and a name helps the reader skip over the details
 - You are comparing against the result of a computation that needs its own scope
 
