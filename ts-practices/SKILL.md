@@ -1,5 +1,5 @@
 ---
-name: ts-patterns
+name: ts-practices
 description: TypeScript coding conventions — functional architecture, file organization, naming discipline, barrel exports, test philosophy, and JSDoc standards. Use this skill whenever writing or reviewing TypeScript code, creating new modules, refactoring existing code, setting up project structure, or discussing TypeScript best practices.
 ---
 
